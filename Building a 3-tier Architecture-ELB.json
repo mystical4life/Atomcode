@@ -1,0 +1,236 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Build AWS three-tier Architecture",
+    "Metadata": {
+
+    },
+    "Parameters": {
+      "IcomVPCcidr": {
+          "Description": "Pick vpc cidr",
+          "Type": "String"
+      },
+      "IcomPublicSubnetcidr": {
+          "Description": "Choose cidr for my PublicSubnet",
+          "Type": "String"
+      },
+      "IcomPrivateSubnetcidr": {
+          "Description": "Choose cidr for my PrivateSubnet",
+          "Type": "String"
+    },
+    "IcomPublicSubnetAZ": {
+        "Description": "Choose AZ for PublicSubnet",
+        "Type": "AWS::EC2::AvailabilityZone::Name"
+    },
+    "IcomPrivateSubnetAZ": {
+        "Description": "Choose AZ for PrivateSubnet",
+        "Type": "AWS::EC2::AvailabilityZone::Name"
+    },
+    "IcomKeypair": {
+        "Description": "Choose a key pair",
+        "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "IcomInstanceType": {
+        "Description": "Choose instance type",
+        "Type": "String",
+        "Default": "t2.micro",
+        "AllowedValues": ["t2.micro","t2.nano","t2.small"]
+    }
+
+  },
+    "Mappings": {
+      "RegionMap": {
+                "us-east-1": {
+                  "HMV64": "ami-0cff7528ff583bf9a"
+                },
+                "us-east-2": {
+                  "HMV64": "ami-02d1e544b84bf7502"
+                }
+      }
+
+    },
+    "Conditions": {
+
+    },
+    "Resources": {
+      "IcomVPC": {
+        "Type": "AWS::EC2::VPC",
+        "Properties": {
+          "CidrBlock": { "Ref": "IcomVPCcidr" },
+          "Tags": [{ "Key": "Name", "Value":  "IcomVPCcidr" }]
+        }
+      },
+      "IcomPublicSubnet": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "MapPublicIpOnLaunch" : "true",
+          "AvailabilityZone": { "Ref": "IcomPublicSubnetAZ" },
+          "VpcId": { "Ref": "IcomVPC" },
+          "CidrBlock": { "Ref": "IcomPublicSubnetcidr" },
+          "Tags": [{ "Key": "Name", "Value":  "IcomPublicSubnet" }]
+        }
+      },
+      "IcomPrivateSubnet": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "AvailabilityZone": { "Ref": "IcomPrivateSubnetAZ" },
+          "VpcId": { "Ref": "IcomVPC" },
+          "CidrBlock": { "Ref": "IcomPrivateSubnetcidr" },
+          "Tags": [{ "Key": "Name", "Value":  "IcomPrivateSubnet" }]
+        }
+      },
+      "IcomIGW": {
+        "Type": "AWS::EC2::InternetGateway",
+        "Properties": {
+          "Tags": [{ "Key": "Name", "Value":  "IcomIGW" }]
+        }
+      },
+      "AttachGateway": {
+        "Type": "AWS::EC2::VPCGatewayAttachment",
+        "Properties": {
+          "VpcId": { "Ref": "IcomVPC" },
+          "InternetGatewayId": { "Ref": "IcomIGW" }
+        }
+      },
+      "IcomPublicSubnetRT": {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": { "Ref": "IcomVPC" },
+          "Tags": [{ "Key": "Name", "Value":  "IcomPublicSubnetRT" }]
+        }
+      },
+    "IcomPublicRTAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "IcomPublicSubnet" },
+        "RouteTableId": { "Ref": "IcomPublicSubnetRT" }
+      }
+    },
+    "IcomPublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": { "Ref": "IcomPublicSubnetRT" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "IcomIGW" }
+      }
+    },
+    "IcomWebserverSG" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "WebserverSG",
+        "SecurityGroupIngress" : [{
+          "IpProtocol" : "tcp",
+            "FromPort" : "80",
+            "ToPort" : "80",
+            "CidrIp" : "0.0.0.0/0"
+          },
+            {"IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+            "CidrIp" : "0.0.0.0/0"}
+        ],
+        "VpcId" : { "Ref": "IcomVPC" },
+        "Tags" :  [{ "Key": "Name", "Value":  "IcomWebserverSG" }]
+      }
+    },
+    "IcomELBSG" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "IcomELBSG",
+        "SecurityGroupIngress" : [{
+          "IpProtocol" : "tcp",
+            "FromPort" : "80",
+            "ToPort" : "80",
+            "CidrIp" : "0.0.0.0/0"
+          }
+        ],
+        "VpcId" : { "Ref": "IcomVPC" },
+        "Tags" :  [{ "Key": "Name", "Value":  "IcomWebserverSG" }]
+      }
+    },
+    "IcomWebserver": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+            "KeyName": { "Ref": "IcomKeypair" },
+            "ImageId": { "Fn::FindInMap": [
+                "RegionMap",
+                {
+            "Ref" : "AWS::Region"
+          },
+                "HMV64"
+            ] },
+            "SubnetId" : { "Ref": "IcomPublicSubnet" },
+            "InstanceType": { "Ref": "IcomInstanceType" },
+            "Monitoring": "false",
+            "SecurityGroupIds" : [{ "Ref": "IcomWebserverSG" }],
+            "Tags": [
+                {
+                    "Key": "Name",
+                    "Value": "IcomWebserver"
+                }
+            ],
+            "UserData": {
+                "Fn::Base64": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "#!/bin/bash -ex",
+                            "-"
+                        ]
+                    ]
+                }
+            }
+    }
+  },
+    "IcomAppserver": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+            "KeyName": { "Ref": "IcomKeypair" },
+            "ImageId": { "Fn::FindInMap": [
+                "RegionMap",
+                {
+            "Ref" : "AWS::Region"
+          },
+                "HMV64"
+            ] },
+            "SubnetId" : { "Ref": "IcomPrivateSubnet" },
+            "InstanceType": { "Ref": "IcomInstanceType" },
+            "Monitoring": "false",
+            "SecurityGroupIds" : [{ "Ref": "IcomWebserverSG" }],
+            "Tags": [
+                {
+                    "Key": "Name",
+                    "Value": "IcomAppserver"
+                }]
+              }
+            },
+            "IcomAppELB": {
+               "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+               "Properties": {
+                "Instances": [{ "Ref": "IcomWebserver" }, { "Ref": "IcomAppserver" }],
+                 "Listeners": [{
+                   "InstancePort": "80",
+                   "InstanceProtocol": "HTTP",
+                   "LoadBalancerPort": "80",
+                   "Protocol": "HTTP"}],
+            "HealthCheck": {
+            "Target": "HTTP:80/index.html",
+            "HealthyThreshold": "2",
+            "UnhealthyThreshold": "3",
+            "Interval": "10",
+            "Timeout": "3"},
+                  "SecurityGroups" : [ { "Ref": "IcomELBSG" }],
+                  "Subnets" : [ { "Ref": "IcomPublicSubnet" }, { "Ref": "IcomPrivateSubnet" }],
+                  "Tags": [
+                        {
+                          "Key": "Name",
+                          "Value": "IcomAppELB"
+                        }
+                  ]
+               }
+            }
+          },
+
+    "Outputs": {
+
+    }
+}
